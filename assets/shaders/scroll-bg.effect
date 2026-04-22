@@ -1,0 +1,58 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: sprite-vs:vert
+      frag: sprite-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        mainTexture: { value: white }
+        uvOffset: { value: [0, 0, 1, 1] }
+}%
+
+CCProgram sprite-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+
+  in vec3 a_position;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+
+  out vec2 v_uv;
+  out vec4 v_color;
+
+  vec4 vert () {
+    vec4 pos = vec4(a_position, 1.0);
+    pos = cc_matViewProj * pos;
+    v_uv = a_texCoord;
+    v_color = a_color;
+    return pos;
+  }
+}%
+
+CCProgram sprite-fs %{
+  precision highp float;
+
+  in vec2 v_uv;
+  in vec4 v_color;
+
+  uniform sampler2D mainTexture;
+  uniform Constant {
+    vec4 uvOffset;
+  };
+
+  vec4 frag () {
+    vec2 uv = v_uv;
+    uv.x = fract(uv.x + uvOffset.x);
+    vec4 color = texture(mainTexture, uv) * v_color;
+    return color;
+  }
+}%

@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "cocos-creator": {
+      "url": "http://127.0.0.1:3000/mcp",
+      "autoApprove": [
+        "cocos_builder",
+        "cocos_node",
+        "cocos_composite",
+        "cocos_scene",
+        "cocos_asset",
+        "cocos_component",
+        "cocos_editor",
+        "cocos_spine"
+      ]
+    }
+  }
+}
