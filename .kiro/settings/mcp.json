@@ -10,7 +10,9 @@
         "cocos_asset",
         "cocos_component",
         "cocos_editor",
-        "cocos_spine"
+        "cocos_spine",
+        "cocos_capture",
+        "cocos_capture"
       ]
     }
   }

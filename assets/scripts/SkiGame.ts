@@ -1,4 +1,8 @@
-import { _decorator, Component, Node, Sprite, SpriteFrame, UITransform, Label, resources, view, Vec3, sp } from 'cc';
+import {
+    _decorator, Component, Node, Sprite, SpriteFrame, UITransform, Label,
+    resources, view, Vec3, Vec2, EventTouch, sp,
+    RigidBody2D, PhysicsSystem2D, Contact2DType, IPhysics2DContact, Collider2D, PolygonCollider2D
+} from 'cc';
 const { ccclass, property } = _decorator;
 
 interface GameConfig {
@@ -23,16 +27,17 @@ const DEFAULT_CONFIG: GameConfig = {
 export class SkiGame extends Component {
 
     @property(Node) bgFirst: Node = null!;
-    @property(Node) bgLoopA: Node = null!;
-    @property(Node) bgLoopB: Node = null!;
+    @property([Node]) bgLoopNodes: Node[] = [];
     @property(Node) roadFirst: Node = null!;
-    @property(Node) roadLoopA: Node = null!;
-    @property(Node) roadLoopB: Node = null!;
+    @property([Node]) roadLoopNodes: Node[] = [];
     @property(Node) cloud1: Node = null!;
     @property(Node) cloud2: Node = null!;
     @property(Node) cloud3: Node = null!;
     @property(Node) skier: Node = null!;
     @property(Node) startBtn: Node = null!;
+    @property(Node) btn2x: Node = null!;
+    @property(Node) btn4x: Node = null!;
+    @property(Node) btnFall: Node = null!;
     @property(Node) sprintEffect: Node = null!;
     @property(Node) coinContainer: Node = null!;
     @property(Label) scoreLabel: Label = null!;
@@ -40,10 +45,13 @@ export class SkiGame extends Component {
     @property bgScrollSpeed: number = 800;
     @property cloudSpeed: number = 30;
     @property speedSmooth: number = 1.2;
-    @property coinInterval: number = 1.5;
-    @property coinPickupRadius: number = 60;
-    @property enablePath: boolean = true;
-    @property pathSmooth: number = 10;
+    @property coinInterval: number = 0.8;
+    @property coinPickupRadius: number = 120;
+
+    // ---- 物理相关 ----
+    private _rb: RigidBody2D = null!;
+    private _onGround = false;
+    private _contactNormal: Vec2 = new Vec2(0, 1);
 
     private _coinFrame: SpriteFrame = null!;
     private _skeleton: sp.Skeleton = null!;
@@ -51,15 +59,13 @@ export class SkiGame extends Component {
     private _gameStarted = false;
     private _currentSpeed = 0;
     private _skierBaseX = 0;
-    private _currentPathY = 0;
     private _coinTimer = 0;
     private _score = 0;
     private _coins: Node[] = [];
     private _coinPool: Node[] = [];
     private _halfVisW = 640;
-    private _scrollDistance = 0;
 
-    private _currentState = 0; // 0=正常 1=加速 2=超级加速 3=摔倒
+    private _currentState = 0;
     private _stateTimer = 0;
     private _coolDownTimer = 0;
     private _isPunished = false;
@@ -76,60 +82,69 @@ export class SkiGame extends Component {
     private _effectTimer = 0;
 
     private _bgFirstW = 0;
-    private _bgLoopW = 0;
-    private _roadFirstW = 0;
-    private _roadLoopW = 0;
     private _bgFirstPassed = false;
-    private _roadFirstPassed = false;
-
-    private _firstPathPoints: number[][] = [
-        [163,-271],[313,-245],[483,-236],[696,-249],[893,-269],[1177,-235],[1403,-256],[1617,-258],
-        [1953,-242],[2137,-238],[2307,-264],[2490,-264],[2650,-244],[2787,-258],
-    ];
-    private _loopPathPoints: number[][] = [
-        [0,-255],[250,-251],[470,-224],[703,-253],[934,-238],[1094,-247],[1300,-264],[1484,-251],
-        [1723,-235],[1930,-260],[2070,-273],[2233,-242],[2410,-247],[2534,-266],[2667,-266],
-        [2847,-244],[3010,-244],[3124,-245],[3280,-260],[3563,-262],[3663,-253],[3863,-266],
-        [4037,-249],[4243,-244],[4394,-235],[4554,-258],[4697,-262],[4880,-253],[5017,-242],
-        [5287,-247],[5434,-255],[5643,-240],[5847,-236],[6050,-266],[6314,-244],[6534,-256],
-        [6847,-251],[7100,-238],[7340,-258],[7463,-269],[7674,-245],[7980,-273],[8327,-247],
-        [8534,-231],[8727,-267],[8940,-255],[9067,-249],[9304,-264],[9517,-271],[9724,-249],[9853,-249],
-    ];
-    private _loopPathLength = 9853;
-    private _firstPathEnd = 2934;
+    private _smoothAngle = 0;
+    private _lastSkierY = 0;
+    private _lastSkierYInited = false;
 
     start() {
+        // 开启 2D 物理
+        PhysicsSystem2D.instance.enable = true;
+        PhysicsSystem2D.instance.gravity = new Vec2(0, -1500);
+
         this._skeleton = this.skier.getComponent(sp.Skeleton)!;
+        this._rb = this.skier.getComponent(RigidBody2D)!;
         this._currentSpeed = this.bgScrollSpeed;
         this._skierBaseX = this.skier.position.x;
-        this._currentPathY = this.skier.position.y;
 
         const visSize = view.getVisibleSize();
         this._halfVisW = visSize.width / 2;
 
-        this.setupLayer(this.bgFirst, this.bgLoopA, this.bgLoopB);
-        this._bgFirstW = this.bgFirst.getComponent(UITransform)!.width;
-        this._bgLoopW = this.bgLoopA.getComponent(UITransform)!.width;
-        this.bgFirst.setPosition(-this._halfVisW, 0, 0);
-        this.bgLoopA.setPosition(-this._halfVisW + this._bgFirstW, 0, 0);
-        this.bgLoopB.setPosition(-this._halfVisW + this._bgFirstW + this._bgLoopW, 0, 0);
+        // 背景首图
+        const firstUT = this.bgFirst.getComponent(UITransform)!;
+        firstUT.anchorX = 0;
+        firstUT.anchorY = 0.5;
+        this._bgFirstW = firstUT.width;
 
-        this.setupLayer(this.roadFirst, this.roadLoopA, this.roadLoopB);
-        this._roadFirstW = this.roadFirst.getComponent(UITransform)!.width;
-        this._roadLoopW = this.roadLoopA.getComponent(UITransform)!.width;
-        this.roadFirst.setPosition(-this._halfVisW, 0, 0);
-        this.roadLoopA.setPosition(-this._halfVisW + this._roadFirstW, 0, 0);
-        this.roadLoopB.setPosition(-this._halfVisW + this._roadFirstW + this._roadLoopW, 0, 0);
-
-        if (this._skeleton) {
-            this._skeleton.setAnimation(0, 'zhengchang', false);
-            this._skeleton.paused = true;
+        let bgX = -this._halfVisW + this._bgFirstW;
+        for (const node of this.bgLoopNodes) {
+            const ut = node.getComponent(UITransform)!;
+            ut.anchorX = 0;
+            ut.anchorY = 0.5;
+            node.setPosition(bgX, 0, 0);
+            bgX += ut.width;
         }
-        const initY = this.getPathY(0) + 100;
-        this.skier.setPosition(this._skierBaseX, initY, 0);
-        this._currentPathY = initY;
+        this.bgFirst.setPosition(-this._halfVisW, 0, 0);
 
+        // 道路层
+        let roadX = -this._halfVisW;
+        for (const node of this.roadLoopNodes) {
+            const ut = node.getComponent(UITransform)!;
+            ut.anchorX = 0;
+            ut.anchorY = 0;
+            node.setPosition(roadX, 0, 0);
+            roadX += ut.width;
+        }
+
+        // Spine 开始前就播放正常滑行动画
+        if (this._skeleton) {
+            this._skeleton.setAnimation(0, 'zhengchang', true);
+        }
+
+        // 碰撞监听
+        PhysicsSystem2D.instance.on(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this);
+        PhysicsSystem2D.instance.on(Contact2DType.END_CONTACT, this.onEndContact, this);
+        PhysicsSystem2D.instance.on(Contact2DType.PRE_SOLVE, this.onPreSolve, this);
+
+        // 按钮
         if (this.startBtn) this.startBtn.on(Node.EventType.TOUCH_END, this.onStartClick, this);
+        if (this.btn2x) this.btn2x.on(Node.EventType.TOUCH_END, () => this.onReceiveStatus(1, 0), this);
+        if (this.btn4x) this.btn4x.on(Node.EventType.TOUCH_END, () => this.onReceiveStatus(2, 0), this);
+        if (this.btnFall) this.btnFall.on(Node.EventType.TOUCH_END, () => this.onReceiveStatus(3, 0), this);
+
+        if (this.btn2x) this.btn2x.active = false;
+        if (this.btn4x) this.btn4x.active = false;
+        if (this.btnFall) this.btnFall.active = false;
 
         if (this.sprintEffect) {
             this._effectSprite = this.sprintEffect.getComponent(Sprite)!;
@@ -145,15 +160,40 @@ export class SkiGame extends Component {
         this.loadAssets();
     }
 
-    private setupLayer(first: Node, loopA: Node, loopB: Node) {
-        for (const n of [first, loopA, loopB]) {
-            const ut = n.getComponent(UITransform)!;
-            ut.anchorX = 0;
-            ut.anchorY = 0.5;
+    // ---- 2D 物理碰撞回调 ----
+    private _groundContacts = 0;
+
+    private onBeginContact(a: Collider2D, b: Collider2D, contact: IPhysics2DContact) {
+        if (a.node === this.skier || b.node === this.skier) {
+            this._groundContacts++;
+            this._onGround = true;
         }
     }
 
-    // === 安卓接口：挂载到 window ===
+    private onEndContact(a: Collider2D, b: Collider2D, contact: IPhysics2DContact) {
+        if (a.node === this.skier || b.node === this.skier) {
+            this._groundContacts--;
+            if (this._groundContacts <= 0) {
+                this._groundContacts = 0;
+                this._onGround = false;
+            }
+        }
+    }
+
+    private onPreSolve(a: Collider2D, b: Collider2D, contact: IPhysics2DContact) {
+        if (a.node === this.skier || b.node === this.skier) {
+            const wm = contact.getWorldManifold();
+            if (wm && wm.normal) {
+                if (a.node === this.skier) {
+                    this._contactNormal.set(-wm.normal.x, -wm.normal.y);
+                } else {
+                    this._contactNormal.set(wm.normal.x, wm.normal.y);
+                }
+            }
+        }
+    }
+
+    // ---- 安卓接口 ----
     private registerGlobalFunctions() {
         const self = this;
         (window as any).receiveStatusAndCoolDown = (status: number, coolDownTime: number) => {
@@ -162,9 +202,7 @@ export class SkiGame extends Component {
         (window as any).receiveCountAndScore = (s1: number, s2: number, s3: number, total: number) => {
             console.log(`收到统计: 状态1=${s1}, 状态2=${s2}, 状态3=${s3}, 总分=${total}`);
         };
-        (window as any).getGoldAmount = () => {
-            return self._score;
-        };
+        (window as any).getGoldAmount = () => self._score;
         (window as any).updateGameConfig = (config: Partial<GameConfig>) => {
             self._config = { ...self._config, ...config };
             (window as any).gameConfig = self._config;
@@ -173,12 +211,10 @@ export class SkiGame extends Component {
         (window as any).gameConfig = this._config;
         (window as any).goldAmount = 0;
     }
-    // === 接收安卓端状态 ===
+
     private onReceiveStatus(status: number, coolDownTime: number) {
         if (this._gameOver || !this._gameStarted) return;
-        // 冷却中忽略
         if (this._coolDownTimer > 0) return;
-        // 摔倒惩罚中忽略状态1和2
         if (this._isPunished && (status === 1 || status === 2)) return;
 
         this._coolDownTimer = coolDownTime;
@@ -189,13 +225,13 @@ export class SkiGame extends Component {
             this._stateTimer = this._config.state1_duration;
             this._chargePool += this._config.state1_duration;
             this._skeleton.setAnimation(0, 'cong ci', true);
-            this.showSprintEffect(true);
-            // 蓄力池满了触发状态2
+            this.showSprintEffect(false);
             if (this._chargePool >= this._config.charge_pool_threshold) {
                 this._chargePool = 0;
                 this._currentState = 2;
                 this._stateTimer = this._config.state2_duration;
                 this._status2Count++;
+                this.showSprintEffect(true);
             }
         } else if (status === 2) {
             this._status2Count++;
@@ -207,7 +243,7 @@ export class SkiGame extends Component {
         } else if (status === 3) {
             this._status3Count++;
             this._currentState = 3;
-            this._stateTimer = 2; // 摔倒固定2秒
+            this._stateTimer = 2;
             this._isPunished = true;
             this._skeleton.setAnimation(0, 'shuaidao', false);
             this.showSprintEffect(false);
@@ -234,10 +270,9 @@ export class SkiGame extends Component {
     onStartClick() {
         this._gameStarted = true;
         if (this.startBtn) this.startBtn.active = false;
-        if (this._skeleton) {
-            this._skeleton.paused = false;
-            this._skeleton.setAnimation(0, 'zhengchang', true);
-        }
+        if (this.btn2x) this.btn2x.active = true;
+        if (this.btn4x) this.btn4x.active = true;
+        if (this.btnFall) this.btnFall.active = true;
     }
 
     update(dt: number) {
@@ -249,13 +284,39 @@ export class SkiGame extends Component {
         this.updateClouds(dt);
         this.updateCoins(dt);
         this.updateSprintEffect(dt);
+        this.updateSkierPhysics(dt);
+    }
 
-        if (this.enablePath) {
-            const targetY = this.getPathY(this._scrollDistance) + 100;
-            this._currentPathY += (targetY - this._currentPathY) * Math.min(1, this.pathSmooth * dt);
-            const p = this.skier.position;
-            this.skier.setPosition(p.x, this._currentPathY, p.z);
+    // ---- 物理驱动角色贴合雪面 ----
+    private updateSkierPhysics(dt: number) {
+        if (!this._rb) return;
+
+        // 保持角色 X 不变
+        const pos = this.skier.position;
+        if (Math.abs(pos.x - this._skierBaseX) > 1) {
+            this.skier.setPosition(this._skierBaseX, pos.y, pos.z);
         }
+
+        if (!this._lastSkierYInited) {
+            this._lastSkierY = pos.y;
+            this._lastSkierYInited = true;
+            return;
+        }
+
+        const deltaY = pos.y - this._lastSkierY;
+        this._lastSkierY = pos.y;
+
+        const vx = this._currentSpeed * dt;
+        let targetAngle = 0;
+        if (vx > 0.01) {
+            targetAngle = Math.atan2(deltaY, vx) * (180 / Math.PI);
+            targetAngle = Math.max(-30, Math.min(30, targetAngle));
+        }
+
+        // 地面上紧跟坡度，离地时缓慢回正
+        const lerpSpeed = this._onGround ? 10 : 3;
+        this._smoothAngle += (targetAngle - this._smoothAngle) * Math.min(1, lerpSpeed * dt);
+        this.skier.setRotationFromEuler(0, 0, this._smoothAngle);
     }
 
     private updateStateTimer(dt: number) {
@@ -264,7 +325,6 @@ export class SkiGame extends Component {
             if (this._stateTimer <= 0) {
                 this._stateTimer = 0;
                 if (this._currentState === 3) {
-                    // 摔倒结束，起身恢复
                     this._isPunished = false;
                     this._skeleton.setAnimation(0, 'qishen', false);
                     this._skeleton.setCompleteListener(() => {
@@ -273,7 +333,6 @@ export class SkiGame extends Component {
                         this._skeleton.setCompleteListener(null!);
                     });
                 } else {
-                    // 状态1/2结束，恢复正常
                     this._currentState = 0;
                     this._skeleton.setAnimation(0, 'zhengchang', true);
                     this.showSprintEffect(false);
@@ -289,13 +348,13 @@ export class SkiGame extends Component {
         }
     }
 
-    // === 速度倍率 ===
     private getSpeedMultiplier(): number {
         if (this._currentState === 1) return 2;
         if (this._currentState === 2) return 4;
-        if (this._currentState === 3) return 0; // 摔倒不动
+        if (this._currentState === 3) return 0;
         return 1;
     }
+
     private scrollAll(dt: number) {
         const mult = this.getSpeedMultiplier();
         let targetSpeed = this.bgScrollSpeed * mult;
@@ -306,28 +365,53 @@ export class SkiGame extends Component {
             this._currentSpeed += (targetSpeed - this._currentSpeed) * Math.min(1, this.speedSmooth * dt);
         }
         const dx = this._currentSpeed * dt;
-        this._scrollDistance += dx;
 
-        this.scrollLayer(this.bgFirst, this.bgLoopA, this.bgLoopB, this._bgFirstW, this._bgLoopW, dx, 'bg');
-        this.scrollLayer(this.roadFirst, this.roadLoopA, this.roadLoopB, this._roadFirstW, this._roadLoopW, dx, 'road');
+        // 背景滚动
+        const fp = this.bgFirst.position;
+        this.bgFirst.setPosition(fp.x - dx, fp.y, fp.z);
+        for (const node of this.bgLoopNodes) {
+            const p = node.position;
+            node.setPosition(p.x - dx, p.y, p.z);
+        }
+        if (!this._bgFirstPassed && this.bgFirst.position.x + this._bgFirstW <= -this._halfVisW) {
+            this._bgFirstPassed = true;
+            this.bgFirst.active = false;
+        }
+        for (const node of this.bgLoopNodes) {
+            const w = node.getComponent(UITransform)!.width;
+            if (node.position.x + w <= -this._halfVisW) {
+                let maxRight = -99999;
+                for (const other of this.bgLoopNodes) {
+                    const oRight = other.position.x + other.getComponent(UITransform)!.width;
+                    if (oRight > maxRight) maxRight = oRight;
+                }
+                node.setPosition(maxRight, 0, 0);
+            }
+        }
+
+        // 道路滚动
+        for (const node of this.roadLoopNodes) {
+            const p = node.position;
+            node.setPosition(p.x - dx, p.y, p.z);
+        }
+        for (const node of this.roadLoopNodes) {
+            const w = node.getComponent(UITransform)!.width;
+            if (node.position.x + w <= -this._halfVisW) {
+                let maxRight = -99999;
+                for (const other of this.roadLoopNodes) {
+                    const oRight = other.position.x + other.getComponent(UITransform)!.width;
+                    if (oRight > maxRight) maxRight = oRight;
+                }
+                node.setPosition(maxRight, node.position.y, 0);
+                this.refreshRoadCollider(node);
+            }
+        }
     }
 
-    private scrollLayer(first: Node, loopA: Node, loopB: Node, firstW: number, loopW: number, dx: number, tag: string) {
-        first.setPosition(first.position.x - dx, first.position.y, first.position.z);
-        loopA.setPosition(loopA.position.x - dx, loopA.position.y, loopA.position.z);
-        loopB.setPosition(loopB.position.x - dx, loopB.position.y, loopB.position.z);
-
-        const passed = tag === 'bg' ? this._bgFirstPassed : this._roadFirstPassed;
-        if (!passed && first.position.x + firstW <= -this._halfVisW) {
-            if (tag === 'bg') this._bgFirstPassed = true;
-            else this._roadFirstPassed = true;
-            first.active = false;
-        }
-        if (loopA.position.x + loopW <= -this._halfVisW) {
-            loopA.setPosition(loopB.position.x + loopW, loopA.position.y, 0);
-        }
-        if (loopB.position.x + loopW <= -this._halfVisW) {
-            loopB.setPosition(loopA.position.x + loopW, loopB.position.y, 0);
+    private refreshRoadCollider(node: Node) {
+        const collider = node.getComponent(PolygonCollider2D);
+        if (collider) {
+            collider.apply();
         }
     }
 
@@ -350,21 +434,30 @@ export class SkiGame extends Component {
 
     private spawnCoin() {
         if (!this._coinFrame) return;
-        let coin: Node;
-        if (this._coinPool.length > 0) { coin = this._coinPool.pop()!; coin.active = true; }
-        else {
-            coin = new Node('Coin');
-            const s = coin.addComponent(Sprite);
-            s.spriteFrame = this._coinFrame;
-            s.sizeMode = Sprite.SizeMode.RAW;
-            s.trim = false;
-            s.type = Sprite.Type.SIMPLE;
-            coin.addComponent(UITransform);
+        // 3个(60%) 4个(25%) 5个(15%)
+        const rand = Math.random();
+        const count = rand < 0.6 ? 3 : rand < 0.85 ? 4 : 5;
+        const baseX = this._halfVisW + 100;
+        const baseY = this.skier.position.y + 80;
+        const spacing = 60;
+
+        for (let j = 0; j < count; j++) {
+            let coin: Node;
+            if (this._coinPool.length > 0) { coin = this._coinPool.pop()!; coin.active = true; }
+            else {
+                coin = new Node('Coin');
+                const s = coin.addComponent(Sprite);
+                s.spriteFrame = this._coinFrame;
+                s.sizeMode = Sprite.SizeMode.RAW;
+                s.trim = false;
+                s.type = Sprite.Type.SIMPLE;
+                coin.addComponent(UITransform);
+            }
+            coin.setPosition(baseX + j * spacing, baseY, 0);
+            coin.setScale(0.5, 0.5, 1);
+            if (coin.parent !== this.coinContainer) this.coinContainer.addChild(coin);
+            this._coins.push(coin);
         }
-        coin.setPosition(this._halfVisW + 100, this.skier.position.y, 0);
-        coin.setScale(0.5, 0.5, 1);
-        if (coin.parent !== this.coinContainer) this.coinContainer.addChild(coin);
-        this._coins.push(coin);
     }
 
     private recycleCoin(coin: Node, index: number) {
@@ -383,10 +476,9 @@ export class SkiGame extends Component {
         for (let i = this._coins.length - 1; i >= 0; i--) {
             const coin = this._coins[i];
             coin.setPosition(coin.position.x - dx, coin.position.y, coin.position.z);
-            const distX = coin.position.x - skierX;
-            const distY = coin.position.y - skierY;
-            // 摔倒时吃不到金币
-            if (!this._isPunished && distX * distX + distY * distY < r * r) {
+            const distX = Math.abs(coin.position.x - skierX);
+            // 只判断 X 距离，确保能吃到
+            if (!this._isPunished && distX < r) {
                 this._score++;
                 (window as any).goldAmount = this._score;
                 this.updateScore();
@@ -419,21 +511,9 @@ export class SkiGame extends Component {
         }
     }
 
-    private getPathY(dist: number): number {
-        if (dist <= this._firstPathEnd) return this.lerpPoints(this._firstPathPoints, dist);
-        return this.lerpPoints(this._loopPathPoints, (dist - this._firstPathEnd) % this._loopPathLength);
-    }
-
-    private lerpPoints(pts: number[][], d: number): number {
-        if (pts.length === 0) return 0;
-        if (d <= pts[0][0]) return pts[0][1];
-        if (d >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
-        for (let i = 0; i < pts.length - 1; i++) {
-            if (d >= pts[i][0] && d <= pts[i + 1][0]) {
-                const t = (d - pts[i][0]) / (pts[i + 1][0] - pts[i][0]);
-                return pts[i][1] + t * (pts[i + 1][1] - pts[i][1]);
-            }
-        }
-        return pts[pts.length - 1][1];
+    onDestroy() {
+        PhysicsSystem2D.instance.off(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this);
+        PhysicsSystem2D.instance.off(Contact2DType.END_CONTACT, this.onEndContact, this);
+        PhysicsSystem2D.instance.off(Contact2DType.PRE_SOLVE, this.onPreSolve, this);
     }
 }

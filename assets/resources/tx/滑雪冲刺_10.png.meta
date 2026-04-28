@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "b0b6e46e-b36f-4502-a558-61fe3bdce873",
+  "uuid": "ad2f4951-11fc-41e5-b08d-3e326996c22f",
   "files": [
     ".json",
     ".png"
@@ -10,14 +10,14 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "b0b6e46e-b36f-4502-a558-61fe3bdce873@6c48a",
-      "displayName": "BgLoopB",
+      "uuid": "ad2f4951-11fc-41e5-b08d-3e326996c22f@6c48a",
+      "displayName": "滑雪冲刺_10",
       "id": "6c48a",
       "name": "texture",
       "userData": {
         "wrapModeS": "clamp-to-edge",
         "wrapModeT": "clamp-to-edge",
-        "imageUuidOrDatabaseUri": "b0b6e46e-b36f-4502-a558-61fe3bdce873",
+        "imageUuidOrDatabaseUri": "ad2f4951-11fc-41e5-b08d-3e326996c22f",
         "isUuid": true,
         "visible": false,
         "minfilter": "linear",
@@ -34,21 +34,21 @@
     },
     "f9941": {
       "importer": "sprite-frame",
-      "uuid": "b0b6e46e-b36f-4502-a558-61fe3bdce873@f9941",
-      "displayName": "BgLoopB",
+      "uuid": "ad2f4951-11fc-41e5-b08d-3e326996c22f@f9941",
+      "displayName": "滑雪冲刺_10",
       "id": "f9941",
       "name": "spriteFrame",
       "userData": {
         "trimThreshold": 1,
         "rotated": false,
-        "offsetX": 0,
-        "offsetY": 0,
-        "trimX": 0,
-        "trimY": 0,
-        "width": 4096,
-        "height": 709,
-        "rawWidth": 4096,
-        "rawHeight": 709,
+        "offsetX": -98,
+        "offsetY": -1.5,
+        "trimX": 69,
+        "trimY": 116,
+        "width": 450,
+        "height": 287,
+        "rawWidth": 784,
+        "rawHeight": 516,
         "borderTop": 0,
         "borderBottom": 0,
         "borderLeft": 0,
@@ -60,17 +60,17 @@
         "meshType": 0,
         "vertices": {
           "rawPosition": [
-            -2048,
-            -354.5,
+            -225,
+            -143.5,
             0,
-            2048,
-            -354.5,
+            225,
+            -143.5,
             0,
-            -2048,
-            354.5,
+            -225,
+            143.5,
             0,
-            2048,
-            354.5,
+            225,
+            143.5,
             0
           ],
           "indexes": [
@@ -82,38 +82,38 @@
             3
           ],
           "uv": [
-            0,
-            709,
-            4096,
-            709,
-            0,
-            0,
-            4096,
-            0
+            69,
+            400,
+            519,
+            400,
+            69,
+            113,
+            519,
+            113
           ],
           "nuv": [
-            0,
-            0,
-            1,
-            0,
-            0,
-            1,
-            1,
-            1
+            0.08801020408163265,
+            0.2189922480620155,
+            0.6619897959183674,
+            0.2189922480620155,
+            0.08801020408163265,
+            0.7751937984496124,
+            0.6619897959183674,
+            0.7751937984496124
           ],
           "minPos": [
-            -2048,
-            -354.5,
+            -225,
+            -143.5,
             0
           ],
           "maxPos": [
-            2048,
-            354.5,
+            225,
+            143.5,
             0
           ]
         },
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "b0b6e46e-b36f-4502-a558-61fe3bdce873@6c48a",
+        "imageUuidOrDatabaseUri": "ad2f4951-11fc-41e5-b08d-3e326996c22f@6c48a",
         "atlasUuid": "",
         "trimType": "auto"
       },
@@ -129,6 +129,6 @@
     "type": "sprite-frame",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
-    "redirect": "b0b6e46e-b36f-4502-a558-61fe3bdce873@6c48a"
+    "redirect": "ad2f4951-11fc-41e5-b08d-3e326996c22f@6c48a"
   }
 }
